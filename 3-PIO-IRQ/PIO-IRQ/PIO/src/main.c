@@ -69,6 +69,9 @@ void but_callback(void)
 	if (pio_get(BUT_PIO, PIO_INPUT, BUT_IDX_MASK)) {
 		but_flag = 1;
 	}
+	else{
+		but_flag = 0;
+	}
 }
 
 /************************************************************************/
