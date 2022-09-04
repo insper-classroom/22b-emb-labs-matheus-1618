@@ -10,6 +10,18 @@
 #define LED1_PIO_IDX       0                   // ID do LED no PIO
 #define LED1_PIO_IDX_MASK  (1 << LED1_PIO_IDX)   // Mascara para CONTROLARMOS o LED
 
+//LED2
+#define LED2_PIO           PIOC                 // periferico que controla o LED
+#define LED2_PIO_ID        ID_PIOC              // ID do periférico PIOC (controla LED)
+#define LED2_PIO_IDX       30                    // ID do LED no PIO
+#define LED2_PIO_IDX_MASK  (1 << LED2_PIO_IDX)   // Mascara para CONTROLARMOS o LED
+
+//LED3
+#define LED3_PIO           PIOB                 // periferico que controla o LED
+#define LED3_PIO_ID        ID_PIOB              // ID do periférico PIOC (controla LED)
+#define LED3_PIO_IDX       2                    // ID do LED no PIO
+#define LED3_PIO_IDX_MASK  (1 << LED3_PIO_IDX)   // Mascara para CONTROLARMOS o LED
+
 // Configuracoes do botao1
 #define BUT1_PIO  PIOD
 #define BUT1_PIO_ID ID_PIOD
@@ -31,8 +43,9 @@
 #define COUNT 20
 
 volatile char but1_flag = 0;
-volatile char is_pressed;
 volatile char but2_flag = 0;
+volatile char but3_flag = 0;
+volatile char is_pressed;
 volatile char stop = 1;
 float time;
 int contagem = 0;
@@ -51,10 +64,15 @@ void pisca_led(int t){
 	for (int i=0;i < COUNT && !stop; i++){
 		gfx_mono_draw_rect(40+4*i, 5, 2, 10, GFX_PIXEL_SET);
 		pio_clear(LED1_PIO, LED1_PIO_IDX_MASK);
+		pio_clear(LED2_PIO, LED2_PIO_IDX_MASK);
+		pio_clear(LED3_PIO, LED3_PIO_IDX_MASK);
 		delay_ms(t);
 		pio_set(LED1_PIO, LED1_PIO_IDX_MASK);
+		pio_set(LED2_PIO, LED2_PIO_IDX_MASK);
+		pio_set(LED3_PIO, LED3_PIO_IDX_MASK);
 		delay_ms(t);
 	}
+	stop = 1;
 }
 
 void but1_callback(void)
@@ -71,16 +89,13 @@ void but1_callback(void)
 
 void but2_callback(void)
 {
-	stop = 1;
-	but1_flag = 0;
-	but1_flag = 0;
+	stop = !stop;
+	but2_flag = 1;
 }
 
 void but3_callback(void)
 {
-	but1_flag = 1;
-	but2_flag = 0;
-	stop = 0;
+	but3_flag = 1;
 }
 
 void init(void)
@@ -92,6 +107,10 @@ void init(void)
 	// Configura led
 	pmc_enable_periph_clk(LED1_PIO_ID);
 	pio_configure(LED1_PIO, PIO_OUTPUT_0, LED1_PIO_IDX_MASK, PIO_DEFAULT);
+	pmc_enable_periph_clk(LED2_PIO_ID);
+	pio_configure(LED2_PIO, PIO_OUTPUT_0, LED2_PIO_IDX_MASK, PIO_DEFAULT);
+	pmc_enable_periph_clk(LED3_PIO_ID);
+	pio_configure(LED3_PIO, PIO_OUTPUT_0, LED3_PIO_IDX_MASK, PIO_DEFAULT);
 
 	// Inicializa clock do periférico PIO responsavel pelo botao
 	pmc_enable_periph_clk(BUT1_PIO_ID);
@@ -158,7 +177,7 @@ int main (void)
 	init();
 	char str[15]; //
 	time = 200;
-	sprintf(str, "pausado "); //
+	sprintf(str, "Incie! "); //
 
 	// Init OLED
 	gfx_mono_ssd1306_init();
@@ -173,7 +192,7 @@ int main (void)
 				contagem++;
 			}
 			else{
-				if (contagem > 3000000){
+				if (contagem > 4000000){
 					time += 100;
 					sprintf(str, "%.2f hz", 1000.0/time); //
 					gfx_mono_draw_string(str, 50,16, &sysfont);
@@ -193,20 +212,15 @@ int main (void)
 		}
 		
 		if (but2_flag){
-			if (time>100){
-				time -= 100;
-			}
-			sprintf(str, "%.2f hz", 1000.0/time); //
-			gfx_mono_draw_string(str, 50,16, &sysfont);
-			
+			pisca_led(time);
 			but2_flag = 0;
 		}
-		// 		sprintf(str, "pausado "); //
-		// 		gfx_mono_draw_string(str, 50,16, &sysfont);
-		//pmc_sleep(SAM_PM_SMODE_SLEEP_WFI);
 		
-
-		
-		
+		if (but3_flag){
+			time += 100;
+			sprintf(str, "%.2f hz", 1000.0/time); //
+			gfx_mono_draw_string(str, 50,16, &sysfont);
+			but3_flag = 0;
+		}
 	}
 }
