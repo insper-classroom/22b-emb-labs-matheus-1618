@@ -31,9 +31,11 @@
 #define COUNT 20
 
 volatile char but1_flag = 0;
+volatile char is_pressed;
 volatile char but2_flag = 0;
 volatile char stop = 1;
 float time;
+int contagem = 0;
 
 void pisca_led(int t);
 void but1_callback(void);
@@ -57,17 +59,13 @@ void pisca_led(int t){
 
 void but1_callback(void)
 {
-	delay_ms(100);
+	is_pressed = 1;
 	if (pio_get(BUT1_PIO, PIO_INPUT, BUT1_PIO_IDX_MASK)) {
 		but1_flag = 1;
-		but2_flag = 0;
-		stop = 0;
 		
 	}
 	else{
 		but1_flag = 0;
-		but2_flag = 1;
-		stop = 0;
 	}
 }
 
@@ -170,26 +168,42 @@ int main (void)
 	
 	/* Insert application code here, after the board has been initialized. */
 	while(1) {
-		if (but1_flag){
-			time += 100;
-			sprintf(str, "%.2f hz", 1000.0/time); //
-			gfx_mono_draw_string(str, 50,16, &sysfont);
-			pisca_led(time);
-			but1_flag = 0;
+		if (is_pressed){
+			if (!but1_flag){
+				contagem++;
+			}
+			else{
+				if (contagem > 3000000){
+					time += 100;
+					sprintf(str, "%.2f hz", 1000.0/time); //
+					gfx_mono_draw_string(str, 50,16, &sysfont);
+				}
+				else{
+					if (time>100){
+						time -= 100;
+					}
+					sprintf(str, "%.2f hz", 1000.0/time); //
+					gfx_mono_draw_string(str, 50,16, &sysfont);
+					contagem = 0;
+				}
+				contagem = 0;
+				is_pressed = 0;
+				
+			}
 		}
 		
-		else if (but2_flag){
+		if (but2_flag){
 			if (time>100){
 				time -= 100;
 			}
 			sprintf(str, "%.2f hz", 1000.0/time); //
 			gfx_mono_draw_string(str, 50,16, &sysfont);
-			pisca_led(time);
+			
 			but2_flag = 0;
 		}
-		sprintf(str, "pausado "); //
-		gfx_mono_draw_string(str, 50,16, &sysfont);
-		pmc_sleep(SAM_PM_SMODE_SLEEP_WFI);
+		// 		sprintf(str, "pausado "); //
+		// 		gfx_mono_draw_string(str, 50,16, &sysfont);
+		//pmc_sleep(SAM_PM_SMODE_SLEEP_WFI);
 		
 
 		
