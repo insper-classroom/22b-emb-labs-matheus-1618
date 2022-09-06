@@ -62,7 +62,7 @@ void pisca_led(int t){
 	}
 	
 	for (int i=0;i < COUNT && !stop; i++){
-		gfx_mono_draw_rect(40+4*i, 5, 2, 10, GFX_PIXEL_SET);
+		gfx_mono_draw_rect(50+4*i, 5, 2, 10, GFX_PIXEL_SET);
 		pio_clear(LED1_PIO, LED1_PIO_IDX_MASK);
 		pio_clear(LED2_PIO, LED2_PIO_IDX_MASK);
 		pio_clear(LED3_PIO, LED3_PIO_IDX_MASK);
@@ -189,26 +189,21 @@ int main (void)
 	while(1) {
 		if (is_pressed){
 			if (!but1_flag){
-				contagem++;
-			}
-			else{
-				if (contagem > 4000000){
-					time += 100;
-					sprintf(str, "%.2f hz", 1000.0/time); //
-					gfx_mono_draw_string(str, 50,16, &sysfont);
-				}
-				else{
-					if (time>100){
-						time -= 100;
+				delay_ms(400);
+					if (!but1_flag){
+						time += 100;
+						sprintf(str, "%.2f hz", 1000.0/time);
+						gfx_mono_draw_string(str, 50,16, &sysfont);
 					}
-					sprintf(str, "%.2f hz", 1000.0/time); //
-					gfx_mono_draw_string(str, 50,16, &sysfont);
-					contagem = 0;
-				}
-				contagem = 0;
-				is_pressed = 0;
-				
+					else{
+						if (time>100){
+							time -= 100;
+						}
+						sprintf(str, "%.2f hz", 1000.0/time);
+						gfx_mono_draw_string(str, 50,16, &sysfont);
+					}
 			}
+			is_pressed = 0;			
 		}
 		
 		if (but2_flag){
