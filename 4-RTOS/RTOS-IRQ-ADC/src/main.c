@@ -19,6 +19,9 @@
 #define TASK_ADC_STACK_SIZE (1024 * 10 / sizeof(portSTACK_TYPE))
 #define TASK_ADC_STACK_PRIORITY (tskIDLE_PRIORITY)
 
+#define TASK_MEAN_STACK_SIZE (1024 * 10 / sizeof(portSTACK_TYPE))
+#define TASK_MEAN_STACK_PRIORITY (tskIDLE_PRIORITY)
+
 extern void vApplicationStackOverflowHook(xTaskHandle *pxTask,
                                           signed char *pcTaskName);
 extern void vApplicationIdleHook(void);
@@ -34,6 +37,7 @@ TimerHandle_t xTimer;
 
 /** Queue for msg log send data */
 QueueHandle_t xQueueADC;
+QueueHandle_t xQueueMean;
 
 typedef struct {
   uint value;
@@ -98,9 +102,9 @@ void vTimerCallback(TimerHandle_t xTimer) {
   afec_start_software_conversion(AFEC_POT);
 }
 
-static void task_adc(void *pvParameters) {
 
-  // configura ADC e TC para controlar a leitura
+static void task_proc(void *pvParameters){
+	  // configura ADC e TC para controlar a leitura
   config_AFEC_pot(AFEC_POT, AFEC_POT_ID, AFEC_POT_CHANNEL, AFEC_pot_callback);
 
   xTimer = xTimerCreate(/* Just a text name, not used by the RTOS
@@ -119,16 +123,39 @@ static void task_adc(void *pvParameters) {
                         /* Timer callback */
                         vTimerCallback);
   xTimerStart(xTimer, 0);
+  
+    // variável para recever dados da fila
+    adcData adc;
+	int i = 0;
+	int media = 0;
+    while (1) {
+	    if (xQueueReceive(xQueueADC, &(adc), 1000)) {
+		    printf("ADC: %d \n", adc);
+			if (i >= 10){
+				media = media / 10;
+				xQueueSend(xQueueMean, &media, 10);
+				i = 0; 
+				media = 0;
+			}
+			else{
+				i++;
+				media += adc.value;
+			}
+		} 
+		else {
+		    printf("ADC:Nao chegou um novo dado em 1 segundo\n");
+	    }
+    }
+}
+
+static void task_adc(void *pvParameters) {
 
   // variável para recever dados da fila
-  adcData adc;
-
+  int media;
   while (1) {
-    if (xQueueReceive(xQueueADC, &(adc), 1000)) {
-      printf("ADC: %d \n", adc);
-    } else {
-      printf("Nao chegou um novo dado em 1 segundo");
-    }
+    if (xQueueReceive(xQueueMean, &(media), 500)) {
+      printf("Media movel: %d \n", media);
+    } 
   }
 }
 
@@ -214,14 +241,21 @@ int main(void) {
   configure_console();
 
   xQueueADC = xQueueCreate(100, sizeof(adcData));
+  xQueueMean = xQueueCreate(100, sizeof(adcData));
   if (xQueueADC == NULL)
     printf("falha em criar a queue xQueueADC \n");
+  if (xQueueMean == NULL)
+  printf("falha em criar a queue xQueueMean \n");
 
   if (xTaskCreate(task_adc, "ADC", TASK_ADC_STACK_SIZE, NULL,
                   TASK_ADC_STACK_PRIORITY, NULL) != pdPASS) {
     printf("Failed to create test ADC task\r\n");
   }
-
+  
+   if (xTaskCreate(task_proc, "Proc", TASK_MEAN_STACK_SIZE, NULL,
+				TASK_MEAN_STACK_PRIORITY, NULL) != pdPASS) {
+	    printf("Failed to create test PROC task\r\n");
+    }
   vTaskStartScheduler();
 
   while (1) {
