@@ -45,6 +45,8 @@
 #define TRIG_PIO_IDX 26
 #define TRIG_IDX_MASK (1 << TRIG_PIO_IDX)
 
+#define VEL_SOM 340.0
+#define FREQ 1/(2*0.000058)
 /** RTOS  */
 #define TASK_OLED_STACK_SIZE                (1024*6/sizeof(portSTACK_TYPE))
 #define TASK_OLED_STACK_PRIORITY            (tskIDLE_PRIORITY)
@@ -56,11 +58,15 @@ extern void vApplicationMallocFailedHook(void);
 extern void xPortSysTickHandler(void);
 
 /** prototypes */
+static void RTT_init(float freqPrescale, uint32_t IrqNPulses, uint32_t rttIRQSource);
 void but1_callback(void);
 void but2_callback(void);
 void but3_callback(void);
 void echo_callback(void);
 void io_init(void);
+
+SemaphoreHandle_t xSemaphoreBut;
+SemaphoreHandle_t xSemaphoreEcho;
 
 /************************************************************************/
 /* RTOS application funcs                                               */
@@ -84,6 +90,8 @@ extern void vApplicationMallocFailedHook(void) {
 /************************************************************************/
 
 void but1_callback(void) {
+	BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+	xSemaphoreGiveFromISR(xSemaphoreBut;&xHigherPriorityTaskWoken);
 }
 
 void but2_callback(void) {
@@ -95,10 +103,11 @@ void but3_callback(void) {
 void echo_callback(void)
 {
 	if (pio_get(ECHO_PIO, PIO_INPUT, ECHO_IDX_MASK)) {
-		RTT_init(freq, 0, 0);
-		} else {
-		echo_flag = 1;
-		rtt_time = get_time_rtt();
+		RTT_init(FREQ, 0, 0);
+	} 
+	else {
+		BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+		xSemaphoreGiveFromISR(xSemaphoreEcho;&xHigherPriorityTaskWoken);
 	}
 }
 
@@ -109,10 +118,28 @@ void echo_callback(void)
 static void task_oled(void *pvParameters) {
 	gfx_mono_ssd1306_init();
 	io_init();
-  gfx_mono_draw_string("Exemplo RTOS", 0, 0, &sysfont);
-  gfx_mono_draw_string("oii", 0, 20, &sysfont);
+	gfx_mono_draw_string("Aperta ai", 0, 0, &sysfont);
+	float distancia = 0.0;
+	int n = 0;
+	char dist[30];
 
 	for (;;)  {
+		if (xSemaphoreTake(xSemaphoreBut,1000)){
+			pio_set(TRIG_PIO, TRIG_IDX_MASK);
+			delay_us(10);
+			pio_clear(TRIG_PIO, TRIG_IDX_MASK);
+		}
+		if (xSemaphoreTake(xSemaphoreEcho,1000)){
+			distancia =  (double) (VEL_SOM*rtt_read_timer_value(RTT)*50.0)/(FREQ);
+			gfx_mono_draw_string("          ", 0, 0, &sysfont);
+			if (distancia <2 || distancia >400){
+				gfx_mono_draw_string("erro", 0, 0, &sysfont);
+			}
+			else{
+				sprintf(dist,"%.2f",distancia);
+				gfx_mono_draw_string(dist,0, 0, &sysfont);
+			}
+		}
     
 
 	}
@@ -121,6 +148,34 @@ static void task_oled(void *pvParameters) {
 /************************************************************************/
 /* funcoes                                                              */
 /************************************************************************/
+static void RTT_init(float freqPrescale, uint32_t IrqNPulses, uint32_t rttIRQSource) {
+
+	uint16_t pllPreScale = (int) (((float) 32768) / freqPrescale);
+	
+	rtt_sel_source(RTT, false);
+	rtt_init(RTT, pllPreScale);
+	
+	if (rttIRQSource & RTT_MR_ALMIEN) {
+		uint32_t ul_previous_time;
+		ul_previous_time = rtt_read_timer_value(RTT);
+		while (ul_previous_time == rtt_read_timer_value(RTT));
+		rtt_write_alarm_time(RTT, IrqNPulses+ul_previous_time);
+	}
+
+	/* config NVIC */
+	NVIC_DisableIRQ(RTT_IRQn);
+	NVIC_ClearPendingIRQ(RTT_IRQn);
+	NVIC_SetPriority(RTT_IRQn, 4);
+	NVIC_EnableIRQ(RTT_IRQn);
+
+	/* Enable RTT interrupt */
+	if (rttIRQSource & (RTT_MR_RTTINCIEN | RTT_MR_ALMIEN))
+	rtt_enable_interrupt(RTT, rttIRQSource);
+	else
+	rtt_disable_interrupt(RTT, RTT_MR_RTTINCIEN | RTT_MR_ALMIEN);
+	
+}
+
 void io_init(void) {
 	pmc_enable_periph_clk(LED_1_PIO_ID);
 	pmc_enable_periph_clk(LED_2_PIO_ID);
@@ -203,7 +258,8 @@ int main(void) {
 
 	/* Initialize the console uart */
 	configure_console();
-
+	xSemaphoreBut = xSemaphoreCreateBinary();
+	xSemaphoreEcho = xSemaphoreCreateBinary();
 	/* Create task to control oled */
 	if (xTaskCreate(task_oled, "oled", TASK_OLED_STACK_SIZE, NULL, TASK_OLED_STACK_PRIORITY, NULL) != pdPASS) {
 	  printf("Failed to create oled task\r\n");
