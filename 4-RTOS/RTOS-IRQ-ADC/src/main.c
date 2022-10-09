@@ -1,5 +1,6 @@
 #include "conf_board.h"
 #include <asf.h>
+#include <math.h>
 
 /************************************************************************/
 /* BOARD CONFIG                                                         */
@@ -130,16 +131,18 @@ static void task_proc(void *pvParameters){
 	int media = 0;
     while (1) {
 	    if (xQueueReceive(xQueueADC, &(adc), 1000)) {
-		    printf("ADC: %d \n", adc);
-			if (i >= 10){
-				media = media / 10;
+			double ln = log((double) adc.value +2000);
+			int ln1 = (1000) * ln;
+		    //printf("ADC: %d \n", ln1);
+			if (i >= 3){
+				media = media / 3;
 				xQueueSend(xQueueMean, &media, 10);
 				i = 0; 
 				media = 0;
 			}
 			else{
 				i++;
-				media += adc.value;
+				media += ln1;
 			}
 		} 
 		else {
@@ -154,7 +157,7 @@ static void task_adc(void *pvParameters) {
   int media;
   while (1) {
     if (xQueueReceive(xQueueMean, &(media), 500)) {
-      printf("Media movel: %d \n", media);
+      printf("Media movel: %d \n", (media));
     } 
   }
 }
