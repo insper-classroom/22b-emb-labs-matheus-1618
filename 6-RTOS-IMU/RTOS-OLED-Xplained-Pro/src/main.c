@@ -5,12 +5,29 @@
 #include "gfx_mono_text.h"
 #include "sysfont.h"
 #include "mcu6050.h"
+#include "Fusion/Fusion.h"
+#include <math.h>
 
 /* Botao da placa */
 #define BUT_PIO     PIOA
 #define BUT_PIO_ID  ID_PIOA
 #define BUT_PIO_PIN 11
 #define BUT_PIO_PIN_MASK (1 << BUT_PIO_PIN)
+
+#define LED_1_PIO PIOA
+#define LED_1_PIO_ID ID_PIOA
+#define LED_1_IDX 0
+#define LED_1_IDX_MASK (1 << LED_1_IDX)
+
+#define LED_2_PIO PIOC
+#define LED_2_PIO_ID ID_PIOC
+#define LED_2_IDX 30
+#define LED_2_IDX_MASK (1 << LED_2_IDX)
+
+#define LED_3_PIO PIOB
+#define LED_3_PIO_ID ID_PIOB
+#define LED_3_IDX 2
+#define LED_3_IDX_MASK (1 << LED_3_IDX)
 
 /** RTOS  */
 #define TASK_OLED_STACK_SIZE                (1024*6/sizeof(portSTACK_TYPE))
@@ -25,6 +42,9 @@ extern void vApplicationTickHook(void);
 extern void vApplicationMallocFailedHook(void);
 extern void xPortSysTickHandler(void);
 
+xSemaphoreHandle xSemaphoreQueda;
+xQueueHandle xQueueorientacao;
+enum orientacao{ESQUERDA=1, FRENTE, DIREITA};  
 /** prototypes */
 void but_callback(void);
 static void BUT_init(void);
@@ -46,6 +66,17 @@ extern void vApplicationTickHook(void) { }
 
 extern void vApplicationMallocFailedHook(void) {
 	configASSERT( ( volatile void * ) NULL );
+}
+
+void io_init(void) {
+	pmc_enable_periph_clk(LED_1_PIO_ID);
+	pmc_enable_periph_clk(LED_2_PIO_ID);
+	pmc_enable_periph_clk(LED_3_PIO_ID);
+
+	pio_configure(LED_1_PIO, PIO_OUTPUT_0, LED_1_IDX_MASK, PIO_DEFAULT);
+	pio_configure(LED_2_PIO, PIO_OUTPUT_0, LED_2_IDX_MASK, PIO_DEFAULT);
+	pio_configure(LED_3_PIO, PIO_OUTPUT_0, LED_3_IDX_MASK, PIO_DEFAULT);
+
 }
 
 void mcu6050_i2c_bus_init(void)
@@ -107,17 +138,59 @@ int8_t mcu6050_i2c_bus_read(uint8_t dev_addr, uint8_t reg_addr, uint8_t *reg_dat
 void but_callback(void) {
 }
 
+static int modulo(float x, float y, float z){
+	float sum = x*x + y*y + z*z;
+	return sqrt(sum);
+}
+
 /************************************************************************/
 /* TASKS                                                                */
 /************************************************************************/
 
-static void task_oled(void *pvParameters) {
+static void task_orientacao(void *pvParameters) {
 	gfx_mono_ssd1306_init();
-  gfx_mono_draw_string("Exemplo RTOS", 0, 0, &sysfont);
-  gfx_mono_draw_string("oii", 0, 20, &sysfont);
-
+    io_init(void);
+	
+	enum orientacao receive;
 	for (;;)  {
+		if (xQueueReceive(xQueueorientacao,&receive,0)){
+			if (receive == ESQUERDA){
+				pio_clear(LED_1_PIO, LED_1_IDX_MASK);
+				vTaskDelay(600);
+				pio_set(LED_1_PIO, LED_1_IDX_MASK);
+			}
+			if (receive == FRENTE){
+				pio_clear(LED_2_PIO, LED_2_IDX_MASK);
+				vTaskDelay(600);
+				pio_set(LED_2_PIO, LED_2_IDX_MASK);
+			}
+			if (receive == DIREITA){
+				pio_clear(LED_3_PIO, LED_3_IDX_MASK);
+				vTaskDelay(600);
+				pio_set(LED_3_PIO, LED_3_IDX_MASK);
+			}
+		}
     
+
+	}
+}
+
+static void task_house_down(void *pvParameters) {
+	io_init();
+	pio_set(LED_1_PIO, LED_1_IDX_MASK);
+	pio_set(LED_2_PIO, LED_2_IDX_MASK);
+	pio_set(LED_3_PIO, LED_3_IDX_MASK);
+	for (;;)  {
+		if (xSemaphoreTake(xSemaphoreQueda,0)){
+				pio_clear(LED_1_PIO, LED_1_IDX_MASK);
+				pio_clear(LED_2_PIO, LED_2_IDX_MASK);
+				pio_clear(LED_3_PIO, LED_3_IDX_MASK);
+				vTaskDelay(600);
+				pio_set(LED_1_PIO, LED_1_IDX_MASK);
+				pio_set(LED_2_PIO, LED_2_IDX_MASK);
+				pio_set(LED_3_PIO, LED_3_IDX_MASK);
+				
+		}
 
 	}
 }
@@ -185,6 +258,8 @@ static void task_imu(void *pvParameters) {
 	volatile uint8_t  raw_gyr_xLow,  raw_gyr_yLow,  raw_gyr_zLow;
 	float proc_gyr_x, proc_gyr_y, proc_gyr_z;
 
+
+
 	for (;;)  {
 		    // Le valor do acc X High e Low
 		    mcu6050_i2c_bus_read(MPU6050_DEFAULT_ADDRESS, MPU6050_RA_ACCEL_XOUT_H, &raw_acc_xHigh, 1);
@@ -228,7 +303,36 @@ static void task_imu(void *pvParameters) {
 		    proc_gyr_x = (float)raw_gyr_x/131;
 		    proc_gyr_y = (float)raw_gyr_y/131;
 		    proc_gyr_z = (float)raw_gyr_z/131;
+			
+			if (modulo(proc_acc_x,proc_acc_y,proc_acc_z) < 0.01){
+				xSemaphoreGive(xSemaphoreQueda,0);
+			}
+			
+			const FusionVector gyroscope = {proc_gyr_x, proc_gyr_y, proc_gyr_z};
+			const FusionVector accelerometer = {proc_acc_x, proc_acc_y, proc_acc_z};
+				
+			// Tempo entre amostras
+			float dT = 0.1
 
+			// aplica o algoritmo
+			FusionAhrsUpdateNoMagnetometer(&ahrs, gyroscope, accelerometer, dT);
+
+			// dados em pitch roll e yaw
+			const FusionEuler euler = FusionQuaternionToEuler(FusionAhrsGetQuaternion(&ahrs));
+
+			printf("Roll %0.1f, Pitch %0.1f, Yaw %0.1f\n", euler.angle.roll, euler.angle.pitch, euler.angle.yaw);
+			if (euler.angle.roll){
+				enum orientacao direcao = ESQUERDA;
+				xQueueSend(xQueueorientacao, &direcao,0);
+			}
+			if (euler.angle.pitch){
+				enum orientacao direcao = FRENTE;
+				xQueueSend(xQueueorientacao, &direcao,0);
+			}
+			if (euler.angle.yaw){
+				enum orientacao direcao = DIREITA;
+				xQueueSend(xQueueorientacao, &direcao,0);
+			}
 		    // uma amostra a cada 1ms
 		    vTaskDelay(1);
 
@@ -278,10 +382,21 @@ int main(void) {
 
 	/* Initialize the console uart */
 	configure_console();
+	/* Inicializa Função de fusão */
+	FusionAhrs ahrs;
+	FusionAhrsInitialise(&ahrs);
+
+	
+	xSemaphoreQueda = xSemaphoreCreateBinary();
+	xQueueorientacao = xQueueCreate(100, sizeof(orientacao));
 
 	/* Create task to control oled */
-	if (xTaskCreate(task_oled, "oled", TASK_OLED_STACK_SIZE, NULL, TASK_OLED_STACK_PRIORITY, NULL) != pdPASS) {
-	  printf("Failed to create oled task\r\n");
+	if (xTaskCreate(task_orientacao, "orientacao", TASK_OLED_STACK_SIZE, NULL, TASK_OLED_STACK_PRIORITY, NULL) != pdPASS) {
+	  printf("Failed to create oled orientacao\r\n");
+	}
+	
+	if (xTaskCreate(task_house_down, "house_down", TASK_OLED_STACK_SIZE, NULL, TASK_OLED_STACK_PRIORITY, NULL) != pdPASS) {
+		printf("Failed to create task_house_down task\r\n");
 	}
 	
 	if (xTaskCreate(task_imu, "imu", TASK_IMU_STACK_SIZE, NULL, TASK_IMU_STACK_PRIORITY, NULL) != pdPASS) {
