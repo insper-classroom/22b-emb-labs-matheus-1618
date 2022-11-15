@@ -99,6 +99,7 @@ static lv_obj_t * labelBtn5;
 lv_obj_t * labelFloor1;
 lv_obj_t * labelFloor2;
 lv_obj_t * labelFloor3;
+lv_obj_t * labelFloor4;
 
 static void event_handler1(lv_event_t * e) {
 	lv_event_code_t code = lv_event_get_code(e);
@@ -140,7 +141,7 @@ static void event_handler4(lv_event_t * e) {
 	if(code == LV_EVENT_CLICKED) {
 		c = lv_label_get_text(labelFloor3);
 		temp = atoi(c);
-		lv_label_set_text_fmt(labelFloor3, "%02d", temp + 1);
+		lv_label_set_text_fmt(labelFloor3, "%02d", temp +1);
 	}
 }
 
@@ -201,7 +202,7 @@ void lv_termostato(void) {
  	
 	lv_obj_t * btn5 = lv_btn_create(lv_scr_act());
 	lv_obj_add_event_cb(btn5, down_handler, LV_EVENT_ALL, NULL);
-	lv_obj_align(btn5, LV_ALIGN_BOTTOM_RIGHT, -10, 0);
+	lv_obj_align(btn5, LV_ALIGN_BOTTOM_RIGHT, -30, 0);
 	lv_obj_add_style(btn5, &style, 0);
 
 	labelBtn5 = lv_label_create(btn5);
@@ -209,7 +210,7 @@ void lv_termostato(void) {
 	lv_obj_center(labelBtn5);
 	
 	labelFloor1 = lv_label_create(lv_scr_act());
-	lv_obj_align(labelFloor1, LV_ALIGN_LEFT_MID, 35 , -45);
+	lv_obj_align(labelFloor1, LV_ALIGN_LEFT_MID, 35 , -15);
 	lv_obj_set_style_text_font(labelFloor1, &dseg70, LV_STATE_DEFAULT);
 	lv_obj_set_style_text_color(labelFloor1, lv_color_white(), LV_STATE_DEFAULT);
 	lv_label_set_text_fmt(labelFloor1, "%02d", 23);
@@ -221,10 +222,16 @@ void lv_termostato(void) {
 	lv_label_set_text_fmt(labelFloor2, "17:4%d", 6);
 	
 	labelFloor3 = lv_label_create(lv_scr_act());
-	lv_obj_align(labelFloor3, LV_ALIGN_TOP_RIGHT, -10 , 60);
+	lv_obj_align(labelFloor3, LV_ALIGN_TOP_RIGHT, -10 , 90);
 	lv_obj_set_style_text_font(labelFloor3, &dseg50, LV_STATE_DEFAULT);
 	lv_obj_set_style_text_color(labelFloor3, lv_color_white(), LV_STATE_DEFAULT);
 	lv_label_set_text_fmt(labelFloor3, "%02d", 26);
+	
+	labelFloor4 = lv_label_create(lv_scr_act());
+	lv_obj_align(labelFloor4, LV_ALIGN_LEFT_MID, 155 , -5);
+	lv_obj_set_style_text_font(labelFloor4, &dseg50, LV_STATE_DEFAULT);
+	lv_obj_set_style_text_color(labelFloor4, lv_color_white(), LV_STATE_DEFAULT);
+	lv_label_set_text_fmt(labelFloor4, ".4");
 }
 
 void RTC_init(Rtc *rtc, uint32_t id_rtc, calendar t, uint32_t irq_type) {
@@ -248,11 +255,6 @@ void RTC_init(Rtc *rtc, uint32_t id_rtc, calendar t, uint32_t irq_type) {
 	rtc_enable_interrupt(rtc,  irq_type);
 }
 
-void update_timer() {
-	uint32_t current_hour, current_min, current_sec;
-	rtc_get_time(RTC, &current_hour, &current_min, &current_sec);
-	lv_label_set_text_fmt(labelFloor2, "%d:%d:%d", current_hour, current_min, current_sec);
-}
 
 /************************************************************************/
 /* TASKS                                                                */
@@ -271,11 +273,13 @@ static void task_lcd(void *pvParameters) {
 }
 
 static void task_rtc(void *pvParameters) {
-	calendar rtc_initial = {0, 0, 0, 0, 0, 0 ,0};
+	calendar rtc_initial = {0, 0, 0, 0, 22, 37 ,0};
 	RTC_init(RTC, ID_RTC, rtc_initial, RTC_IER_SECEN);
 	for(;;) {
 		if (xSemaphoreTake(xSemaphoreRTC, 0)) {
-			update_timer();
+			uint32_t current_hour, current_min, current_sec;
+			rtc_get_time(RTC, &current_hour, &current_min, &current_sec);
+			lv_label_set_text_fmt(labelFloor2, "%d:%d:%d", current_hour, current_min, current_sec);
 		}
 	}
 }
